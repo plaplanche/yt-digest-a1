@@ -2,6 +2,8 @@ import html
 import re
 from dataclasses import dataclass
 
+from yt_digest_node.sponsorblock import in_segment, to_ms
+
 PARAGRAPH_GAP = 2.0
 
 _TAG = re.compile(r"<[^>]*>")
@@ -28,10 +30,6 @@ def _seconds(stamp: str) -> float | None:
     return (
         int(hours or 0) * 3600 + int(minutes) * 60 + int(seconds) + int(millis) / 1000
     )
-
-
-def _ms(seconds: float) -> int:
-    return round(seconds * 1000)
 
 
 def _is_ignored(block: list[str]) -> bool:
@@ -77,9 +75,7 @@ def clean_paragraphs(cues: list[Cue], segments: list[tuple[float, float]]) -> li
     previous_line: str | None = None
     previous_end: int | None = None
     for cue in cues:
-        # integer milliseconds: float seconds make exact boundaries unreliable
-        midpoint = _ms(cue.start) + _ms(cue.end)  # twice the midpoint
-        if any(_ms(start) * 2 <= midpoint < _ms(end) * 2 for start, end in segments):
+        if in_segment(cue.start, cue.end, segments):
             continue
         kept: list[str] = []
         for line in map(clean_line, cue.lines):
@@ -88,8 +84,10 @@ def clean_paragraphs(cues: list[Cue], segments: list[tuple[float, float]]) -> li
                 previous_line = line
         if not kept:
             continue
-        if previous_end is None or _ms(cue.start) - previous_end >= _ms(PARAGRAPH_GAP):
+        if previous_end is None or to_ms(cue.start) - previous_end >= to_ms(
+            PARAGRAPH_GAP
+        ):
             paragraphs.append([])
         paragraphs[-1].extend(kept)
-        previous_end = _ms(cue.end)
+        previous_end = to_ms(cue.end)
     return [" ".join(lines) for lines in paragraphs]
