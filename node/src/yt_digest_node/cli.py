@@ -37,6 +37,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _limit(env: dict[str, str], name: str, default: int) -> int:
+    try:
+        value = int(env[name])
+    except (KeyError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
 def _empty(video_id: str, status: str) -> dict[str, Any]:
     return {
         "video_id": video_id,
@@ -66,8 +74,8 @@ def run(
         found = fetch_segments(base_url, video_id, request_id)
         sponsorblock = found.state
         paragraphs = clean_paragraphs(parse_vtt(track.text), found.segments)
-        paragraphs, cut = truncate(paragraphs, int(env.get("MAX_WORDS", "60000")))
-        pages = paginate(paragraphs, int(env.get("PAGE_WORDS", "12000")))
+        paragraphs, cut = truncate(paragraphs, _limit(env, "MAX_WORDS", 60000))
+        pages = paginate(paragraphs, _limit(env, "PAGE_WORDS", 12000))
         result.update(
             status="ok",
             lang=track.lang,

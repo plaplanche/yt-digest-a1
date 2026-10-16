@@ -1,3 +1,4 @@
+import importlib.metadata
 import json
 import os
 import subprocess
@@ -10,18 +11,6 @@ from typing import Any
 
 import pytest
 from yt_digest_node.contracts.transcript_result import TranscriptResult
-
-VTT = """WEBVTT
-
-00:00:01.000 --> 00:00:03.000
-Hello and welcome.
-
-00:00:10.000 --> 00:00:12.000
-Buy this great product now.
-
-00:00:20.000 --> 00:00:22.000
-Back to the secret subject.
-"""
 
 REPLY: dict[str, Any] = {"status": 200, "body": b"[]"}
 
@@ -48,18 +37,8 @@ def server() -> Iterator[str]:
 
 
 @pytest.fixture
-def fixtures(tmp_path: Path) -> Path:
-    def video(name: str, meta: dict[str, Any], tracks: dict[str, str]) -> None:
-        directory = tmp_path / name
-        directory.mkdir()
-        (directory / "meta.json").write_text(json.dumps(meta))
-        for filename, text in tracks.items():
-            (directory / filename).write_text(text)
-
-    video("okokokokok1", {"duration": 30}, {"en.manual.vtt": VTT})
-    video("notrackvi_1", {"duration": 30}, {"de.manual.vtt": VTT})
-    video("blockedvid_", {"status": "blocked"}, {})
-    return tmp_path
+def fixtures() -> Path:
+    return Path(__file__).parent / "fixtures" / "cli"
 
 
 def run(
@@ -99,6 +78,7 @@ def test_ok_with_sponsor_cuts(fixtures: Path, server: str) -> None:
     assert result.sponsor_ratio == pytest.approx(0.133)
     started, sponsor, fetched = logs(process)
     assert started["event"] == "service.started"
+    assert started["attrs"]["version"] == importlib.metadata.version("yt-digest-node")
     assert sponsor["event"] == "sponsorblock.call"
     assert fetched["event"] == "fetch.transcript"
     assert fetched["request_id"] == "r1"
@@ -137,7 +117,10 @@ def test_no_transcript(fixtures: Path, server: str) -> None:
     result = TranscriptResult.model_validate_json(process.stdout)
     assert result.status.value == "no_transcript"
     assert result.pages == [] and result.lang is None and result.word_count == 0
-    assert logs(process)[-1]["attrs"]["outcome"] == "no_transcript"
+    attrs = logs(process)[-1]["attrs"]
+    assert attrs["outcome"] == "no_transcript"
+    assert attrs["source"] is None and attrs["sponsor_ratio"] is None
+    assert attrs["sponsorblock"] == "none"
 
 
 def test_unavailable(fixtures: Path, server: str) -> None:
@@ -157,3 +140,35 @@ def test_invalid_video_id(fixtures: Path, server: str, video_id: str) -> None:
     process = run(fixtures, server, "transcript", video_id)
     assert process.returncode == 2
     assert process.stdout == ""
+
+
+def test_langs_from_environment(fixtures: Path, server: str) -> None:
+    process = run(fixtures, server, "transcript", "notrackvi_1", TRANSCRIPT_LANGS="de")
+    result = TranscriptResult.model_validate_json(process.stdout)
+    assert result.status.value == "ok"
+    assert result.lang == "de"
+
+
+def test_empty_langs_option_falls_back_to_environment(
+    fixtures: Path, server: str
+) -> None:
+    process = run(
+        fixtures,
+        server,
+        "transcript",
+        "notrackvi_1",
+        "--langs",
+        "",
+        TRANSCRIPT_LANGS=" de, ",
+    )
+    assert json.loads(process.stdout)["lang"] == "de"
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-3", ""])
+def test_bad_limits_use_defaults(fixtures: Path, server: str, value: str) -> None:
+    process = run(
+        fixtures, server, "transcript", "okokokokok1", MAX_WORDS=value, PAGE_WORDS=value
+    )
+    assert process.returncode == 0
+    result = json.loads(process.stdout)
+    assert result["word_count"] == 13 and not result["truncated"]

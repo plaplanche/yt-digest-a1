@@ -34,3 +34,6 @@
 2026-10-16 A paragraph that does not fit the current page starts a new page; a paragraph longer than `PAGE_WORDS` is cut into chunks of `PAGE_WORDS` words, and the last chunk may take following paragraphs.
 2026-10-16 SponsorBlock is only called when a track was chosen; otherwise `fetch.transcript` logs `sponsorblock` = `none` and `sponsor_ratio` null, and `source` is null when there is no source.
 2026-10-16 `service.started` carries the `request_id` when given, and its `version` is read from the installed package metadata.
+2026-10-16 A `MAX_WORDS` or `PAGE_WORDS` that is not a positive integer is ignored and the default is used.
+2026-10-16 The language list is split on commas, spaces around each language are stripped and empty entries dropped; an empty `--langs` counts as absent and falls back to `TRANSCRIPT_LANGS` (default `fr,en`).
+2026-10-16 In the `fetch.transcript` log line, `source` and `sponsor_ratio` are written as null (not omitted) when they have no value.
