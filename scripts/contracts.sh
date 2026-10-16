@@ -38,6 +38,9 @@ if [[ "$mode" == "--check" ]]; then
   while IFS= read -r f; do
     [[ -f "$root/$f" ]] && cmp -s "$tmp/$f" "$root/$f" || stale+=("$f")
   done < <(cd "$tmp" && find "$ts_rel" "$py_rel" -type f ! -name '*.pyc' | sort)
+  while IFS= read -r f; do
+    [[ -f "$tmp/$f" ]] || stale+=("$f")
+  done < <(cd "$root" && find "$ts_rel" "$py_rel" -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | sort)
   if ((${#stale[@]})); then
     echo "stale generated files (run ./scripts/contracts.sh):" >&2
     printf '  %s\n' "${stale[@]}" >&2

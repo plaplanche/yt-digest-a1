@@ -22,9 +22,25 @@ VALID = {
     "pages": ["one two three"],
 }
 
+NO_TRANSCRIPT = {
+    **VALID,
+    "status": "no_transcript",
+    "lang": None,
+    "source": None,
+    "word_count": 0,
+    "sponsor_ratio": None,
+    "pages": [],
+}
+
 
 def test_valid_transcript_result_is_accepted() -> None:
     assert TranscriptResult.model_validate(VALID).word_count == 3
+
+
+def test_no_transcript_result_with_nulls_is_accepted() -> None:
+    result = TranscriptResult.model_validate(NO_TRANSCRIPT)
+    assert result.lang is None
+    assert result.sponsor_ratio is None
 
 
 @pytest.mark.parametrize(
@@ -115,3 +131,11 @@ def test_check_names_files_when_schema_changes(tree: Path) -> None:
     result = check(tree)
     assert result.returncode == 1
     assert "node/src/yt_digest_node/contracts/transcript_result.py" in result.stderr
+
+
+def test_check_names_orphaned_generated_file(tree: Path) -> None:
+    orphan = "worker/src/contracts/gone.ts"
+    (tree / orphan).write_text("// orphan\n")
+    result = check(tree)
+    assert result.returncode == 1
+    assert orphan in result.stderr

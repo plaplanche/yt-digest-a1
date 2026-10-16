@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import pytest
 from yt_digest_node.contracts.log_event import LogEventName
@@ -30,3 +31,12 @@ def test_emit_rejects_event_outside_catalogue(
 def test_emit_rejects_unknown_field() -> None:
     with pytest.raises(ValueError):
         emit("service.started", bogus=1)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"service": "worker"}, {"ts": "2026-10-16T12:00:00.000Z"}, {"request_id": None}],
+)
+def test_emit_rejects_overrides_and_nulls(fields: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        emit("service.started", **fields)

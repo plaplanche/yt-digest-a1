@@ -7,3 +7,5 @@
 2026-10-16 Optional `request_id` and `video_id` are omitted from the log line when absent; `service` is fixed by each logger (`node`, `worker`) and `ts` is set by the logger.
 2026-10-16 `contracts.sh` honours `CONTRACTS_ROOT` (default: the repository) so the staleness tests can run `--check` on a copy of the tree.
 2026-10-16 The TS logger writes with `console.error` (standard error); `tsconfig` gains `resolveJsonModule` and `node` types for the schema import and the tests.
+2026-10-16 Each check that needs the worker dependencies (`contracts`, `test-node`) runs `npm ci` itself; `ajv` is a `dependency` of the worker.
+2026-10-16 The Python logger rejects `ts` and `service` overrides, unknown fields and null `request_id`/`video_id`, because the generated model accepts null where the schema does not.

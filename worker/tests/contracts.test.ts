@@ -27,3 +27,16 @@ test.each([
 ])("a transcript result with %s is rejected", (_name, value) => {
   expect(validate(value)).toBe(false);
 });
+
+test("a no_transcript result with null lang, source and sponsor_ratio is accepted", () => {
+  const result: TranscriptResult = {
+    ...valid,
+    status: "no_transcript",
+    lang: null,
+    source: null,
+    word_count: 0,
+    sponsor_ratio: null,
+    pages: [],
+  };
+  expect(validate(result)).toBe(true);
+});
