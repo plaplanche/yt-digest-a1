@@ -39,3 +39,8 @@
 2026-10-16 In the `fetch.transcript` log line, `source` and `sponsor_ratio` are written as null (not omitted) when they have no value.
 2026-10-16 A `$ref` to another schema file is generated as an import of that schema's type (TypeScript) or a module reference (Pydantic); the post-processing lives in `scripts/contracts.sh`.
 2026-10-16 In `node-result-request`, `transcript` is `anyOf` the `$ref` and null, and the timestamp pattern of lot 1's log `ts` is reused for lot 2 timestamps.
+2026-10-16 The Worker tests run under `@cloudflare/vitest-pool-workers`, which needs Vitest 4, so `worker/` pins `vitest` `^4.1.0`; `vitest.config.ts` has a `node` project (existing tests) and a `worker` project (`tests/*.worker.test.ts`, run in Miniflare with the migrations applied by `tests/setup.ts`).
+2026-10-16 `wrangler.toml` uses a placeholder `database_id` (local only, no account) and a `compatibility_date` of 2026-08-01, the newest the installed workerd supports.
+2026-10-16 `/ops/*` authentication covers every path under `/ops/`: with `OPS_TOKEN` set, a request without the right bearer gets 401 even on an unknown route, and an authenticated unknown route or method gets 404.
+2026-10-16 The operator token is compared in constant time by comparing the SHA-256 digests of both values; a missing, empty or non-`Bearer` header is a 401.
+2026-10-16 The initial migration adds `CHECK` constraints for the enums of section 6.3 and a unique index on `nodes.token_hash`.

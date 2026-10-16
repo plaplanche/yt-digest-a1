@@ -12,13 +12,16 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.20261016.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.5",
     "eslint": "^10.13.0",
     "json-schema-to-typescript": "^16.0.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.2",
-    "vitest": "^5.0.5"
+    "vitest": "^4.1.0",
+    "wrangler": "^4.151.1"
   },
   "dependencies": {
     "ajv": "^8.20.0"
