@@ -2,6 +2,8 @@ import html
 import re
 from dataclasses import dataclass
 
+from yt_digest_node.sponsorblock import in_segment
+
 PARAGRAPH_GAP = 2.0
 
 _TAG = re.compile(r"<[^>]*>")
@@ -77,9 +79,7 @@ def clean_paragraphs(cues: list[Cue], segments: list[tuple[float, float]]) -> li
     previous_line: str | None = None
     previous_end: int | None = None
     for cue in cues:
-        # integer milliseconds: float seconds make exact boundaries unreliable
-        midpoint = _ms(cue.start) + _ms(cue.end)  # twice the midpoint
-        if any(_ms(start) * 2 <= midpoint < _ms(end) * 2 for start, end in segments):
+        if in_segment(cue.start, cue.end, segments):
             continue
         kept: list[str] = []
         for line in map(clean_line, cue.lines):

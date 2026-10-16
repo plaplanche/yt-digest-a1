@@ -13,3 +13,5 @@
 2026-10-16 A "kept cue" (paragraph gap, step 5) is a cue that still has at least one line after steps 3 and 4; the gap is measured from the end of the last such cue.
 2026-10-16 The VTT parser accepts `mm:ss.mmm` and `hh:mm:ss.mmm` timestamps, an optional cue identifier line, and skips blocks without a valid timing line; inline tags are removed with one `<...>` pattern, so voice tags lose only the tag, not the spoken text.
 2026-10-16 Timestamps must be `mm:ss.mmm` or `hh:mm:ss.mmm` with two-digit minutes and minutes/seconds below 60 (stricter lines are skipped); paragraph gaps and segment bounds are compared in integer milliseconds to avoid float rounding.
+2026-10-16 The SponsorBlock client is `fetch_segments(base_url, video_id, request_id=None)` returning segments and a state (`ok`, `none`, `error`); a 200 whose body is not a list of `segment` pairs is an `error`, and the call is logged at `info` whatever the state.
+2026-10-16 The midpoint rule lives in `sponsorblock.in_segment` (reused by the VTT cleaner); `sponsor_ratio` is 0 when the duration is not positive.
