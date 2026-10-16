@@ -44,3 +44,8 @@
 2026-10-16 `/ops/*` authentication covers every path under `/ops/`: with `OPS_TOKEN` set, a request without the right bearer gets 401 even on an unknown route, and an authenticated unknown route or method gets 404.
 2026-10-16 The operator token is compared in constant time by comparing the SHA-256 digests of both values; a missing, empty or non-`Bearer` header is a 401.
 2026-10-16 The initial migration adds `CHECK` constraints for the enums of section 6.3 and a unique index on `nodes.token_hash`.
+2026-10-16 `e2e/playwright.config.ts` selects tests by file name: `*.api.spec.ts` for the `api` project and `*.browser.spec.ts` for the `browser` project (which has no test yet); the Worker URL and the mocks URL come from `WORKER_PORT` and `MOCKS_PORT`.
+2026-10-16 The mocks server serves only `/health` and the SponsorBlock 404 for now; the Google routes come with the fake Google ticket.
+2026-10-16 `stack.sh` starts each process under `setsid` so that `down` can signal its whole process group (TERM, then KILL after 5 seconds), and detects a taken port by trying to connect to it.
+2026-10-16 `stack.sh` passes every setting of section 5.2 to the Worker as a `--var`, even those the Worker does not read yet.
+2026-10-16 `.wrangler/` (wrangler's build output) is git-ignored and ESLint ignores it in `worker/`.
