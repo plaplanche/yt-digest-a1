@@ -3,5 +3,6 @@ declare namespace Cloudflare {
     DB: D1Database;
     TRANSCRIPTS: R2Bucket;
     OPS_TOKEN?: string;
+    LEASE_SECONDS?: string;
   }
 }
