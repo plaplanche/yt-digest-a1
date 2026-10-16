@@ -11,8 +11,8 @@ ready_label = "ariane"
 runtime = "claude-code"
 model = "claude-sonnet-5-5"
 tools = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
-max_budget_usd = 5.0
-timeout_minutes = 30
+max_budget_usd = 8.0
+timeout_minutes = 60
 
 [agents.reviewer]
 runtime = "claude-code"
@@ -37,13 +37,18 @@ command = ["./scripts/check.sh", "test-node"]
 name = "test-worker"
 command = ["./scripts/check.sh", "test-worker"]
 
+[[checks]]
+name = "e2e"
+command = ["./scripts/check.sh", "e2e"]
+
 [definition_of_done]
 items = [
   { check = "lint" },
   { check = "contracts" },
   { check = "test-node" },
   { check = "test-worker" },
-  { text = "The change does what the ticket and spec/lot-1.md say, and nothing more." },
+  { check = "e2e" },
+  { text = "The change does what the ticket and spec/lot-2.md (and spec/lot-1.md, which still applies) say, and nothing more." },
   { text = "The change is covered by tests that fail without it." },
   { text = "Every choice the spec leaves open is written down in docs/decisions.md." },
 ]
