@@ -94,6 +94,10 @@ describe("POST /ops/jobs and GET /ops/jobs/<id>", () => {
     expect(await job(vid(3))).toMatchObject({ priority: 0 });
   });
 
+  test("a repeated id in one request is enqueued once", async () => {
+    expect(await enqueue([vid(1), vid(2), vid(1)])).toEqual({ enqueued: [vid(1), vid(2)], existing: [] });
+  });
+
   test("an existing job keeps its state and its priority only goes up", async () => {
     await enqueue([vid(1)], 5);
     await enqueue([vid(1)], 2);
@@ -121,6 +125,25 @@ describe("POST /ops/jobs and GET /ops/jobs/<id>", () => {
     const ids = Array.from({ length: 100 }, (_, i) => vid(i));
     expect((await enqueue(ids)).enqueued).toHaveLength(100);
     await expectError(await ops(`/ops/jobs/${vid(999)}`), 404, "not_found");
+  });
+});
+
+describe("log events", () => {
+  test("enrolment, enqueue, heartbeat, claim and ops rejection are logged", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const token = await enroll("n1");
+    await enqueue([vid(1)], 2);
+    await node(token, "/node/heartbeat", { version: "0.2.0", uptime_s: 5, jobs_in_progress: 1 });
+    await claim(token);
+    await call("/ops/jobs", { method: "POST", body: "{}" });
+    const lines = spy.mock.calls.map(([l]) => JSON.parse(String(l)) as { event: string; video_id?: string; attrs?: Record<string, unknown> });
+    spy.mockRestore();
+    const of = (event: string) => lines.filter((l) => l.event === event);
+    expect(of("node.enrolled")[0]?.attrs).toEqual({ node_id: "n1" });
+    expect(of("job.enqueued")[0]?.attrs).toEqual({ count: 1, priority: 2 });
+    expect(of("node.heartbeat")[0]?.attrs).toEqual({ node_id: "n1", version: "0.2.0", jobs_in_progress: 1 });
+    expect(of("job.claimed")[0]).toMatchObject({ video_id: vid(1), attrs: { node_id: "n1", attempt: 1, lease_seconds: 600 } });
+    expect(of("auth.bearer.rejected")[0]?.attrs).toEqual({ surface: "ops", reason: "missing" });
   });
 });
 
@@ -195,6 +218,14 @@ describe("POST /node/claim", () => {
     expect(await claim(token)).toEqual([]);
   });
 
+  test("the answer keeps the order the jobs were chosen in, for mixed-case ids with - and _", async () => {
+    const token = await enroll("n1");
+    const ids = ["Bxxxxxxxxxx", "axxxxxxxxxx", "-xxxxxxxxxx", "_xxxxxxxxxx", "0xxxxxxxxxx", "Axxxxxxxxxx"];
+    await enqueue(ids);
+    const claimed = await claim(token, { max_jobs: 6 });
+    expect(claimed.map((j) => j.video_id)).toEqual(["-xxxxxxxxxx", "0xxxxxxxxxx", "Axxxxxxxxxx", "Bxxxxxxxxxx", "_xxxxxxxxxx", "axxxxxxxxxx"]);
+  });
+
   test("a claimed job is leased with its attempt, its node and a leases row", async () => {
     const token = await enroll("n1");
     await enqueue([vid(1)]);
@@ -249,8 +280,9 @@ describe("concurrent claims on the real D1 (8.3, 8.9)", () => {
 
     // Now more demand than supply: 4 remaining jobs, 4 nodes asking for 3.
     const rest = await Promise.all(tokens.map((t) => claim(t, { max_jobs: 3 })));
-    const sizes = rest.map((r) => r.length).sort();
-    expect(sizes.reduce((a, b) => a + b, 0)).toBe(4);
+    // Claims are atomic: the first takes 3, the next the last one, the others nothing.
+    const sizes = rest.map((r) => r.length).sort((a, b) => a - b);
+    expect(sizes).toEqual([0, 0, 1, 3]);
     expect(new Set([...handed, ...rest.flat().map((j) => j.video_id)]).size).toBe(40);
   });
 });

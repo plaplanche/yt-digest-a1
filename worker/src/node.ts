@@ -40,6 +40,9 @@ function leaseSeconds(env: Cloudflare.Env): number {
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_LEASE_SECONDS;
 }
 
+/** Code-unit order, the same as SQLite's BINARY collation that picks the jobs (`localeCompare` would differ). */
+const codeUnitOrder = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 interface ClaimedRow {
   video_id: string;
   lease_id: string;
@@ -81,7 +84,7 @@ async function claim(env: Cloudflare.Env, nodeId: string, body: unknown): Promis
   ]);
 
   const rows = (claimed?.results ?? []).sort(
-    (a, b) => b.priority - a.priority || a.created_at.localeCompare(b.created_at) || a.video_id.localeCompare(b.video_id),
+    (a, b) => b.priority - a.priority || codeUnitOrder(a.created_at, b.created_at) || codeUnitOrder(a.video_id, b.video_id),
   );
   for (const row of rows) {
     log("job.claimed", { video_id: row.video_id, attrs: { node_id: nodeId, attempt: row.attempts, lease_seconds: seconds } });

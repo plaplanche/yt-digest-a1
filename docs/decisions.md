@@ -56,3 +56,5 @@
 2026-10-16 `auth.bearer.rejected` is also logged for a missing or wrong operator token (`surface` `ops`, `reason` `missing` or `unknown`), at level `warn`, as it is for node tokens.
 2026-10-16 `LEASE_SECONDS` that is not a positive integer is ignored and 600 is used.
 2026-10-16 The `/node/*` request body is validated with Ajv against the contract schemas inside the Worker; an empty body is invalid JSON (400), so a node sends `{}` to claim.
+2026-10-16 "video_id ascending" (8.3) is code-unit (SQLite BINARY) order, so `-` < digits < `A-Z` < `_` < `a-z`; the Worker sorts the claimed rows the same way (not `localeCompare`) so the answer keeps the order the jobs were chosen in.
+2026-10-16 A video id repeated in one `POST /ops/jobs` is deduplicated (first occurrence kept), so it is reported once.

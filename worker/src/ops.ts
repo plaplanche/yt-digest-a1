@@ -73,7 +73,7 @@ async function enqueueJobs(env: Cloudflare.Env, body: Record<string, unknown>): 
     return invalid("video_ids must be 1 to 100 video ids");
   }
   if (typeof priority !== "number" || !Number.isInteger(priority) || priority < 0) return invalid("priority must be an integer >= 0");
-  const videoIds = ids as string[];
+  const videoIds = [...new Set(ids as string[])];
   const now = new Date().toISOString();
   const results = await env.DB.batch([
     ...videoIds.map((id) =>
