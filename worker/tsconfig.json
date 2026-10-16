@@ -6,7 +6,8 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": []
+    "resolveJsonModule": true,
+    "types": ["node"]
   },
   "include": ["src", "tests", "*.ts"]
 }
