@@ -36,7 +36,16 @@ def test_meta_status_is_returned(tmp_path: Path, status: str) -> None:
 
 
 def test_tracks_and_duration(tmp_path: Path) -> None:
-    video(tmp_path, {"fr.auto.vtt": "A", "en.manual.vtt": "B", "notes.txt": "C"})
+    video(
+        tmp_path,
+        {
+            "fr.auto.vtt": "A",
+            "en.manual.vtt": "B",
+            "notes.txt": "C",
+            "notes.vtt": "D",
+            "a.b.manual.vtt": "E",
+        },
+    )
     result = FakeExtractor(tmp_path).extract("abc")
     assert isinstance(result, Extraction)
     assert result.duration == 90
@@ -70,6 +79,22 @@ def test_make_extractor_fake_and_missing_dir(tmp_path: Path) -> None:
     assert isinstance(make_extractor(env), FakeExtractor)
     with pytest.raises(ValueError):
         make_extractor({"FETCHER_FAKE_YTDLP": "1"})
+
+
+def test_make_extractor_delay_wiring() -> None:
+    default = make_extractor({})
+    assert isinstance(default, YtDlpExtractor) and default.delay == (2.0, 5.0)
+    custom = make_extractor({"YT_DELAY_SECONDS": "0"})
+    assert isinstance(custom, YtDlpExtractor) and custom.delay == (0.0, 0.0)
+
+
+def test_fake_extractor_never_sleeps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video(tmp_path, {"en.manual.vtt": "B"})
+    monkeypatch.setattr("time.sleep", lambda _: pytest.fail("slept"))
+    env = {"FETCHER_FAKE_YTDLP": "1", "FAKE_YTDLP_DIR": str(tmp_path)}
+    assert isinstance(make_extractor(env).extract("abc"), Extraction)
 
 
 def test_parse_delay() -> None:
@@ -156,3 +181,39 @@ def test_ytdlp_unmapped_error_propagates() -> None:
     extractor = YtDlpExtractor(StubYtDlp(error="HTTP 500"), (0, 0), lambda _: None)
     with pytest.raises(RuntimeError):
         extractor.extract("abc")
+
+
+def test_ytdlp_missing_duration_is_zero() -> None:
+    extractor = YtDlpExtractor(StubYtDlp({"duration": None}), (0, 0), lambda _: None)
+    assert extractor.extract("abc") == Extraction(0, [])
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("HTTP Error 429: Too Many Requests", "blocked"),
+        ("HTTP Error 403: Forbidden", "blocked"),
+    ],
+)
+def test_ytdlp_subtitle_download_error_is_mapped(message: str, expected: str) -> None:
+    class Failing(StubYtDlp):
+        def urlopen(self, url: str) -> SimpleNamespace:
+            raise OSError(message)
+
+    info = {"duration": 1, "subtitles": {"en": [{"ext": "vtt", "url": "u"}]}}
+    extractor = YtDlpExtractor(Failing(info), (0, 0), lambda _: None)
+    assert extractor.extract("abc", ["en"]) == expected
+
+
+def test_ytdlp_service_unavailable_is_not_unavailable_video() -> None:
+    extractor = YtDlpExtractor(
+        StubYtDlp(error="HTTP Error 503: Service Unavailable"), (0, 0), lambda _: None
+    )
+    with pytest.raises(RuntimeError):
+        extractor.extract("abc")
+
+
+def test_ytdlp_rate_limit_message_is_blocked() -> None:
+    message = "Video unavailable. This content isn't available, try again later"
+    extractor = YtDlpExtractor(StubYtDlp(error=message), (0, 0), lambda _: None)
+    assert extractor.extract("abc") == "blocked"

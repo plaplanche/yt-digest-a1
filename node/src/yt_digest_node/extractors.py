@@ -12,14 +12,14 @@ from typing import Any, Literal, Protocol
 Kind = Literal["manual", "auto"]
 Failure = Literal["unavailable", "blocked"]
 
-_BLOCKED_MARKERS = ("not a bot",)
+_BLOCKED_MARKERS = ("not a bot", "try again later", "http error 429", "http error 403")
 _UNAVAILABLE_MARKERS = (
     "private video",
     "your age",
     "age-restricted",
     "age restricted",
     "removed",
-    "unavailable",
+    "video unavailable",
     "terminated",
     "does not exist",
 )
@@ -57,7 +57,10 @@ class FakeExtractor:
             return meta["status"]  # type: ignore[no-any-return]
         tracks = []
         for path in sorted(directory.glob("*.vtt")):
-            lang, kind, _ = path.name.rsplit(".", 2)
+            parts = path.name.split(".")
+            if len(parts) != 3:
+                continue
+            lang, kind, _ = parts
             if kind in ("manual", "auto"):
                 tracks.append(Track(lang, kind, path.read_text(encoding="utf-8")))  # type: ignore[arg-type]
         return Extraction(float(meta["duration"]), tracks)
@@ -108,7 +111,10 @@ class YtDlpExtractor:
                         url = _vtt_url((info.get(key) or {}).get(lang, []))
                         if url is not None:
                             self._wait()
-                            text = ydl.urlopen(url).read().decode("utf-8")
+                            try:
+                                text = ydl.urlopen(url).read().decode("utf-8")
+                            except (OSError, self.ytdlp.utils.DownloadError) as error:
+                                return _map_error(str(error))
                             tracks.append(Track(lang, kind, text))  # type: ignore[arg-type]
         except self.ytdlp.utils.DownloadError as error:
             return _map_error(str(error))
