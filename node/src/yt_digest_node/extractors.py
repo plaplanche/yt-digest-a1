@@ -18,7 +18,7 @@ _UNAVAILABLE_MARKERS = (
     "your age",
     "age-restricted",
     "age restricted",
-    "removed",
+    "has been removed",
     "video unavailable",
     "terminated",
     "does not exist",
@@ -111,12 +111,9 @@ class YtDlpExtractor:
                         url = _vtt_url((info.get(key) or {}).get(lang, []))
                         if url is not None:
                             self._wait()
-                            try:
-                                text = ydl.urlopen(url).read().decode("utf-8")
-                            except (OSError, self.ytdlp.utils.DownloadError) as error:
-                                return _map_error(str(error))
+                            text = ydl.urlopen(url).read().decode("utf-8")
                             tracks.append(Track(lang, kind, text))  # type: ignore[arg-type]
-        except self.ytdlp.utils.DownloadError as error:
+        except self.ytdlp.utils.YoutubeDLError as error:
             return _map_error(str(error))
         return Extraction(float(info.get("duration") or 0), tracks)
 

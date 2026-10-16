@@ -81,7 +81,8 @@ def test_make_extractor_fake_and_missing_dir(tmp_path: Path) -> None:
         make_extractor({"FETCHER_FAKE_YTDLP": "1"})
 
 
-def test_make_extractor_delay_wiring() -> None:
+def test_make_extractor_delay_wiring(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("importlib.import_module", lambda name: StubYtDlp())
     default = make_extractor({})
     assert isinstance(default, YtDlpExtractor) and default.delay == (2.0, 5.0)
     custom = make_extractor({"YT_DELAY_SECONDS": "0"})
@@ -102,14 +103,22 @@ def test_parse_delay() -> None:
     assert parse_delay("3") == (3.0, 3.0)
 
 
-class DownloadError(Exception):
+class YoutubeDLError(Exception):
+    """Base of yt-dlp's own errors; it is not an `OSError`."""
+
+
+class DownloadError(YoutubeDLError):
     pass
+
+
+class HTTPError(YoutubeDLError):
+    """Like `yt_dlp.networking.exceptions.HTTPError`, raised by `urlopen`."""
 
 
 class StubYtDlp:
     """Stands in for the yt_dlp module."""
 
-    utils = SimpleNamespace(DownloadError=DownloadError)
+    utils = SimpleNamespace(YoutubeDLError=YoutubeDLError, DownloadError=DownloadError)
 
     def __init__(self, info: dict[str, Any] | None = None, error: str | None = None):
         self.info = info
@@ -198,7 +207,7 @@ def test_ytdlp_missing_duration_is_zero() -> None:
 def test_ytdlp_subtitle_download_error_is_mapped(message: str, expected: str) -> None:
     class Failing(StubYtDlp):
         def urlopen(self, url: str) -> SimpleNamespace:
-            raise OSError(message)
+            raise HTTPError(message)
 
     info = {"duration": 1, "subtitles": {"en": [{"ext": "vtt", "url": "u"}]}}
     extractor = YtDlpExtractor(Failing(info), (0, 0), lambda _: None)
