@@ -1,6 +1,6 @@
 # Status
 
-- Last action: implementing
-- At: 2026-10-16 23:12:14Z
-- Detail: implementer session running
-- Next: wait
+- Last action: pushed
+- At: 2026-10-16 23:25:28Z
+- Detail: ariane/17 pushed; opening the pull request
+- Next: see the pull request, or run ariane status 17
