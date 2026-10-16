@@ -37,3 +37,5 @@
 2026-10-16 A `MAX_WORDS` or `PAGE_WORDS` that is not a positive integer is ignored and the default is used.
 2026-10-16 The language list is split on commas, spaces around each language are stripped and empty entries dropped; an empty `--langs` counts as absent and falls back to `TRANSCRIPT_LANGS` (default `fr,en`).
 2026-10-16 In the `fetch.transcript` log line, `source` and `sponsor_ratio` are written as null (not omitted) when they have no value.
+2026-10-16 A `$ref` to another schema file is generated as an import of that schema's type (TypeScript) or a module reference (Pydantic); the post-processing lives in `scripts/contracts.sh`.
+2026-10-16 In `node-result-request`, `transcript` is `anyOf` the `$ref` and null, and the timestamp pattern of lot 1's log `ts` is reused for lot 2 timestamps.

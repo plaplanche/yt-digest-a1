@@ -40,3 +40,8 @@ def test_emit_rejects_unknown_field() -> None:
 def test_emit_rejects_overrides_and_nulls(fields: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         emit("service.started", **fields)
+
+
+def test_emit_accepts_a_lot_2_event(capsys: pytest.CaptureFixture[str]) -> None:
+    emit("worker.call", attrs={"endpoint": "claim", "status": 200, "duration_ms": 12})
+    assert '"event":"worker.call"' in capsys.readouterr().err
