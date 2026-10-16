@@ -15,14 +15,19 @@ def cue(start: float, end: float, *lines: str) -> Cue:
 
 def test_parse_manual_ignores_header_blocks_and_settings() -> None:
     cues = load("manual")
-    assert [(c.start, c.end) for c in cues] == [(1.0, 3.0), (3.5, 5.0), (7.0, 9.0)]
+    assert [(c.start, c.end) for c in cues] == [
+        (1.0, 3.0),
+        (3.5, 5.0),
+        (7.0, 9.0),
+        (10.9, 12.3),
+    ]
     assert cues[1].lines == ("<v Roger>Today we talk", "about parsing.</v>")
 
 
 def test_manual_cleaning_and_paragraphs() -> None:
     assert clean_paragraphs(load("manual"), []) == [
         "Hello and welcome. Today we talk about parsing.",
-        "A new paragraph starts here.",
+        "A new paragraph starts here. Same paragraph after a 1.9 second gap.",
     ]
 
 
@@ -63,3 +68,17 @@ def test_segments_drop_cues_by_midpoint() -> None:
 def test_empty_input() -> None:
     assert parse_vtt("WEBVTT\n") == []
     assert clean_paragraphs([], []) == []
+
+
+def test_gap_of_exactly_2_seconds_parsed_from_text_with_fractions() -> None:
+    text = (
+        "WEBVTT\n\n00:00:00.300 --> 00:00:01.300\na\n\n"
+        "00:00:03.300 --> 00:00:04.000\nb\n\n"
+        "00:00:05.900 --> 00:00:06.000\nc\n"
+    )
+    assert clean_paragraphs(parse_vtt(text), []) == ["a", "b c"]
+
+
+def test_malformed_timestamps_are_skipped() -> None:
+    text = "WEBVTT\n\n0:01.000 --> 00:02.000\na\n\n00:75.000 --> 00:80.000\nb\n"
+    assert parse_vtt(text) == []

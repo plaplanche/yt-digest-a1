@@ -7,7 +7,7 @@ PARAGRAPH_GAP = 2.0
 _TAG = re.compile(r"<[^>]*>")
 _ANNOTATION = re.compile(r"\[[^\]]*\]")
 _SPACES = re.compile(r"\s+")
-_TIMESTAMP = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{3})")
+_TIMESTAMP = re.compile(r"(?:(\d+):)?(\d{2}):(\d{2})\.(\d{3})")
 _IGNORED_BLOCKS = ("NOTE", "STYLE", "REGION")
 
 
@@ -23,9 +23,15 @@ def _seconds(stamp: str) -> float | None:
     if match is None:
         return None
     hours, minutes, seconds, millis = match.groups()
+    if int(minutes) > 59 or int(seconds) > 59:
+        return None
     return (
         int(hours or 0) * 3600 + int(minutes) * 60 + int(seconds) + int(millis) / 1000
     )
+
+
+def _ms(seconds: float) -> int:
+    return round(seconds * 1000)
 
 
 def _is_ignored(block: list[str]) -> bool:
@@ -69,10 +75,11 @@ def clean_paragraphs(cues: list[Cue], segments: list[tuple[float, float]]) -> li
     """Apply steps 2 to 5 of section 5.4; return the paragraphs."""
     paragraphs: list[list[str]] = []
     previous_line: str | None = None
-    previous_end: float | None = None
+    previous_end: int | None = None
     for cue in cues:
-        midpoint = (cue.start + cue.end) / 2
-        if any(start <= midpoint < end for start, end in segments):
+        # integer milliseconds: float seconds make exact boundaries unreliable
+        midpoint = _ms(cue.start) + _ms(cue.end)  # twice the midpoint
+        if any(_ms(start) * 2 <= midpoint < _ms(end) * 2 for start, end in segments):
             continue
         kept: list[str] = []
         for line in map(clean_line, cue.lines):
@@ -81,8 +88,8 @@ def clean_paragraphs(cues: list[Cue], segments: list[tuple[float, float]]) -> li
                 previous_line = line
         if not kept:
             continue
-        if previous_end is None or cue.start - previous_end >= PARAGRAPH_GAP:
+        if previous_end is None or _ms(cue.start) - previous_end >= _ms(PARAGRAPH_GAP):
             paragraphs.append([])
         paragraphs[-1].extend(kept)
-        previous_end = cue.end
+        previous_end = _ms(cue.end)
     return [" ".join(lines) for lines in paragraphs]
