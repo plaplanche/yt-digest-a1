@@ -17,3 +17,4 @@
 2026-10-16 The midpoint rule lives in `sponsorblock.in_segment` (reused by the VTT cleaner); `sponsor_ratio` is 0 when the duration is not positive.
 2026-10-16 Any network failure (including `http.client.HTTPException` such as a truncated body, and a timeout while reading the body) is logged with status 0 and state `error`; redirects are followed by `urllib` and a redirect ending in 200 counts as `ok`.
 2026-10-16 A 200 body with a non-finite segment bound or a segment with start > end is an invalid body (`error`); `to_ms` in `sponsorblock.py` is the single millisecond helper, shared with `vtt.py`.
+2026-10-16 A 200 body is valid only if it is a JSON list of objects whose `segment` is a list of exactly two non-boolean numbers; any parse failure (including a huge integer or deeply nested JSON) is an `error`, and a base URL `urllib` rejects (`ValueError`) is a failed call with status 0.

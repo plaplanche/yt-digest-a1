@@ -1,4 +1,5 @@
 import json
+import socket
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -70,16 +71,18 @@ def test_404_is_none(server: str, capsys: pytest.CaptureFixture[str]) -> None:
     REPLY.update(status=404, body=b"Not Found")
     result = fetch_segments(server, "abc")
     assert (result.state, result.segments) == ("none", [])
-    attrs = log_line(capsys)["attrs"]
-    assert (attrs["status"], attrs["segments"]) == (404, 0)
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (404, 0)
 
 
 def test_500_is_error(server: str, capsys: pytest.CaptureFixture[str]) -> None:
     REPLY.update(status=500, body=b"")
     result = fetch_segments(server, "abc")
     assert (result.state, result.segments) == ("error", [])
-    attrs = log_line(capsys)["attrs"]
-    assert (attrs["status"], attrs["segments"]) == (500, 0)
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (500, 0)
 
 
 def test_200_with_invalid_body_is_error(
@@ -88,11 +91,39 @@ def test_200_with_invalid_body_is_error(
     REPLY.update(status=200, body=b"not json")
     result = fetch_segments(server, "abc")
     assert (result.state, result.segments) == ("error", [])
-    assert log_line(capsys)["attrs"]["status"] == 200
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (200, 0)
 
 
 @pytest.mark.parametrize(
-    "body", [b"[[1, 2]]", b'[{"segment": [5, 1]}]', b'[{"segment": [NaN, 1]}]']
+    "body",
+    [
+        b"[[1, 2]]",
+        b'[{"segment": [5, 1]}]',
+        b'[{"segment": [NaN, 1]}]',
+        b'{"segment": [1, 2]}',
+        b'[{"segment": "12"}]',
+        b'[{"segment": ["1", "2"]}]',
+        b'[{"segment": [true, false]}]',
+        b'[{"segment": [1, 2, 3]}]',
+        b'[{"segment": [1]}]',
+        b'[{"segment": [' + b"1" * 400 + b", 2]}]",
+        b"[" * 100000,
+    ],
+    ids=[
+        "item-not-object",
+        "start-after-end",
+        "nan",
+        "not-a-list",
+        "string-segment",
+        "string-bounds",
+        "boolean-bounds",
+        "three-items",
+        "one-item",
+        "huge-integer",
+        "deeply-nested",
+    ],
 )
 def test_200_with_unusable_segments_is_error(
     server: str, body: bytes, capsys: pytest.CaptureFixture[str]
@@ -101,6 +132,17 @@ def test_200_with_unusable_segments_is_error(
     REPLY.update(status=200, body=body)
     result = fetch_segments(server, "abc")
     assert (result.state, result.segments) == ("error", [])
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (200, 0)
+
+
+def test_malformed_base_url_is_error(capsys: pytest.CaptureFixture[str]) -> None:
+    result = fetch_segments("no-scheme", "abc")
+    assert (result.state, result.segments) == ("error", [])
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (0, 0)
 
 
 def test_truncated_body_is_error(
@@ -128,13 +170,15 @@ def test_timeout_is_ten_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_connection_refused_is_error(capsys: pytest.CaptureFixture[str]) -> None:
-    httpd = HTTPServer(("127.0.0.1", 0), Handler)
-    port = httpd.server_port
-    httpd.server_close()
-    result = fetch_segments(f"http://127.0.0.1:{port}", "abc")
+    # A bound but never listening socket refuses connections and keeps its port reserved.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        result = fetch_segments(f"http://127.0.0.1:{port}", "abc")
     assert (result.state, result.segments) == ("error", [])
-    attrs = log_line(capsys)["attrs"]
-    assert (attrs["status"], attrs["segments"]) == (0, 0)
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (0, 0)
 
 
 def test_midpoint_start_inclusive() -> None:

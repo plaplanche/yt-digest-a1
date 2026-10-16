@@ -28,11 +28,26 @@ def to_ms(seconds: float) -> int:
     return round(seconds * 1000)
 
 
+def _bound(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError("segment bound is not a number")
+    return float(value)
+
+
+def _pair(item: object) -> Segment:
+    pair = item["segment"]  # type: ignore[index]
+    if not isinstance(pair, list) or len(pair) != 2:
+        raise TypeError("segment is not a pair")
+    return _bound(pair[0]), _bound(pair[1])
+
+
 def _parse(body: bytes) -> list[Segment] | None:
     try:
         items = json.loads(body)
-        segments = [(float(i["segment"][0]), float(i["segment"][1])) for i in items]
-    except (ValueError, TypeError, KeyError, IndexError):
+        if not isinstance(items, list):
+            return None
+        segments = [_pair(i) for i in items]
+    except (ValueError, TypeError, KeyError, IndexError, OverflowError, RecursionError):
         return None
     if any(not (math.isfinite(s) and math.isfinite(e) and s <= e) for s, e in segments):
         return None
@@ -61,9 +76,10 @@ def fetch_segments(
                 result = SponsorBlockResult(segments, "ok")
     except urllib.error.HTTPError as error:
         status = error.code
+        error.close()
         if status == 404:
             result = SponsorBlockResult([], "none")
-    except (urllib.error.URLError, OSError, http.client.HTTPException):
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
         status = 0
     fields = {"request_id": request_id} if request_id is not None else {}
     emit(
