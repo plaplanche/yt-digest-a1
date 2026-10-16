@@ -2,10 +2,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const repo = resolve(import.meta.dirname, "../..");
 const generated = "worker/src/contracts/log-event.ts";
+// --check regenerates every schema in both languages
+vi.setConfig({ testTimeout: 120_000 });
+
 let copy: string;
 
 function check() {

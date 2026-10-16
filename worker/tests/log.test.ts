@@ -22,3 +22,9 @@ test("an event outside the catalogue throws", () => {
 test("an unknown field throws", () => {
   expect(() => log("service.started", { bogus: 1 } as never)).toThrow();
 });
+
+test("a lot 2 event is accepted", () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  log("job.claimed", { video_id: "dQw4w9WgXcQ", attrs: { node_id: "n1", attempt: 1, lease_seconds: 600 } });
+  expect(JSON.parse(String(spy.mock.calls[0]?.[0]))).toMatchObject({ event: "job.claimed", video_id: "dQw4w9WgXcQ" });
+});
