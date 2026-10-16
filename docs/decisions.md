@@ -29,3 +29,11 @@
 2026-10-16 The yt-dlp options add `quiet: True` to the ones of section 5.2, to keep yt-dlp from writing on standard output.
 2026-10-16 `choose_track` returns `None` when no track matches; turning `None` into the `no_transcript` status is left to the command.
 2026-10-16 Besides the bot check, HTTP 429/403 and "try again later" are `blocked` (YouTube's usual way of refusing a client), as they are checked before the `unavailable` markers.
+2026-10-16 The command is `yt_digest_node.cli:entry` (also runnable with `python -m yt_digest_node.cli`); argparse gives exit code 2 for a bad argument, and a video id is checked against the contract pattern.
+2026-10-16 Truncation cuts at word level on paragraphs (a paragraph may be split between a kept half and the dropped middle); the `[…]` paragraph weighs 0 words in pages and is never cut, and a short page may start or end with it.
+2026-10-16 A paragraph that does not fit the current page starts a new page; a paragraph longer than `PAGE_WORDS` is cut into chunks of `PAGE_WORDS` words, and the last chunk may take following paragraphs.
+2026-10-16 SponsorBlock is only called when a track was chosen; otherwise `fetch.transcript` logs `sponsorblock` = `none` and `sponsor_ratio` null, and `source` is null when there is no source.
+2026-10-16 `service.started` carries the `request_id` when given, and its `version` is read from the installed package metadata.
+2026-10-16 A `MAX_WORDS` or `PAGE_WORDS` that is not a positive integer is ignored and the default is used.
+2026-10-16 The language list is split on commas, spaces around each language are stripped and empty entries dropped; an empty `--langs` counts as absent and falls back to `TRANSCRIPT_LANGS` (default `fr,en`).
+2026-10-16 In the `fetch.transcript` log line, `source` and `sponsor_ratio` are written as null (not omitted) when they have no value.

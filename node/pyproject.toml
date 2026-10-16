@@ -7,6 +7,9 @@ dependencies = [
     "yt-dlp>=2026.8.19",
 ]
 
+[project.scripts]
+yt-digest-node = "yt_digest_node.cli:entry"
+
 [dependency-groups]
 dev = [
     "ruff",
