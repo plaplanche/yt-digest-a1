@@ -9,3 +9,7 @@
 2026-10-16 The TS logger writes with `console.error` (standard error); `tsconfig` gains `resolveJsonModule` and `node` types for the schema import and the tests.
 2026-10-16 Each check that needs the worker dependencies (`contracts`, `test-node`) runs `npm ci` itself; `ajv` is a `dependency` of the worker.
 2026-10-16 The Python logger rejects `ts` and `service` overrides, unknown fields and null `request_id`/`video_id`, because the generated model accepts null where the schema does not.
+2026-10-16 Segments are `(start, end)` tuples of seconds; paragraphs are returned as a list of strings (joining with `\n\n` is left to the caller).
+2026-10-16 A "kept cue" (paragraph gap, step 5) is a cue that still has at least one line after steps 3 and 4; the gap is measured from the end of the last such cue.
+2026-10-16 The VTT parser accepts `mm:ss.mmm` and `hh:mm:ss.mmm` timestamps, an optional cue identifier line, and skips blocks without a valid timing line; inline tags are removed with one `<...>` pattern, so voice tags lose only the tag, not the spoken text.
+2026-10-16 Timestamps must be `mm:ss.mmm` or `hh:mm:ss.mmm` with two-digit minutes and minutes/seconds below 60 (stricter lines are skipped); paragraph gaps and segment bounds are compared in integer milliseconds to avoid float rounding.
