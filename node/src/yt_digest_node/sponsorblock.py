@@ -1,4 +1,6 @@
+import http.client
 import json
+import math
 import time
 import urllib.error
 import urllib.parse
@@ -22,16 +24,19 @@ class SponsorBlockResult:
     state: State
 
 
-def _ms(seconds: float) -> int:
+def to_ms(seconds: float) -> int:
     return round(seconds * 1000)
 
 
 def _parse(body: bytes) -> list[Segment] | None:
     try:
         items = json.loads(body)
-        return [(float(i["segment"][0]), float(i["segment"][1])) for i in items]
+        segments = [(float(i["segment"][0]), float(i["segment"][1])) for i in items]
     except (ValueError, TypeError, KeyError, IndexError):
         return None
+    if any(not (math.isfinite(s) and math.isfinite(e) and s <= e) for s, e in segments):
+        return None
+    return segments
 
 
 def fetch_segments(
@@ -58,7 +63,7 @@ def fetch_segments(
         status = error.code
         if status == 404:
             result = SponsorBlockResult([], "none")
-    except (urllib.error.URLError, OSError):
+    except (urllib.error.URLError, OSError, http.client.HTTPException):
         status = 0
     fields = {"request_id": request_id} if request_id is not None else {}
     emit(
@@ -76,8 +81,8 @@ def fetch_segments(
 
 def in_segment(start: float, end: float, segments: list[Segment]) -> bool:
     """Midpoint rule of step 2: start inclusive, end exclusive, in integer milliseconds."""
-    midpoint = _ms(start) + _ms(end)  # twice the midpoint
-    return any(_ms(s) * 2 <= midpoint < _ms(e) * 2 for s, e in segments)
+    midpoint = to_ms(start) + to_ms(end)  # twice the midpoint
+    return any(to_ms(s) * 2 <= midpoint < to_ms(e) * 2 for s, e in segments)
 
 
 def sponsor_ratio(segments: list[Segment], duration: float) -> float:

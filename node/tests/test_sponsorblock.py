@@ -17,9 +17,11 @@ class Handler(BaseHTTPRequestHandler):
         REQUESTS.append(self.path)
         body = REPLY.get("body", b"")
         self.send_response(REPLY["status"])
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(REPLY.get("length", len(body))))
         self.end_headers()
         self.wfile.write(body)
+        if "length" in REPLY:
+            self.close_connection = True
 
     def log_message(self, format: str, *args: Any) -> None:
         pass
@@ -28,6 +30,7 @@ class Handler(BaseHTTPRequestHandler):
 @pytest.fixture
 def server() -> Iterator[str]:
     REQUESTS.clear()
+    REPLY.clear()
     httpd = HTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -86,6 +89,42 @@ def test_200_with_invalid_body_is_error(
     result = fetch_segments(server, "abc")
     assert (result.state, result.segments) == ("error", [])
     assert log_line(capsys)["attrs"]["status"] == 200
+
+
+@pytest.mark.parametrize(
+    "body", [b"[[1, 2]]", b'[{"segment": [5, 1]}]', b'[{"segment": [NaN, 1]}]']
+)
+def test_200_with_unusable_segments_is_error(
+    server: str, body: bytes, capsys: pytest.CaptureFixture[str]
+) -> None:
+    REPLY.clear()
+    REPLY.update(status=200, body=body)
+    result = fetch_segments(server, "abc")
+    assert (result.state, result.segments) == ("error", [])
+
+
+def test_truncated_body_is_error(
+    server: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    REPLY.clear()
+    REPLY.update(status=200, body=b"[", length=100)
+    result = fetch_segments(server, "abc")
+    assert (result.state, result.segments) == ("error", [])
+    line = log_line(capsys)
+    assert line["event"] == "sponsorblock.call"
+    assert (line["attrs"]["status"], line["attrs"]["segments"]) == (0, 0)
+
+
+def test_timeout_is_ten_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[float] = []
+
+    def fake(url: str, timeout: float) -> Any:
+        seen.append(timeout)
+        raise TimeoutError
+
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+    assert fetch_segments("http://unused", "abc").state == "error"
+    assert seen == [10]
 
 
 def test_connection_refused_is_error(capsys: pytest.CaptureFixture[str]) -> None:
