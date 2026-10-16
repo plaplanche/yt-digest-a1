@@ -18,3 +18,9 @@
 2026-10-16 Any network failure (including `http.client.HTTPException` such as a truncated body, and a timeout while reading the body) is logged with status 0 and state `error`; redirects are followed by `urllib` and a redirect ending in 200 counts as `ok`.
 2026-10-16 A 200 body with a non-finite segment bound or a segment with start > end is an invalid body (`error`); `to_ms` in `sponsorblock.py` is the single millisecond helper, shared with `vtt.py`.
 2026-10-16 A 200 body is valid only if it is a JSON list of objects whose `segment` is a list of exactly two non-boolean numbers; any parse failure (including a huge integer or deeply nested JSON) is an `error`, and a base URL `urllib` rejects (`ValueError`) is a failed call with status 0.
+2026-10-16 Extractors take `(video_id, langs)`; the fake one ignores `langs`, yt-dlp downloads only the tracks in the requested languages (exact language key) instead of every auto-translation.
+2026-10-16 yt-dlp is a runtime dependency of the node; `YtDlpExtractor` receives the module as an argument (the stub in tests) and `make_extractor(env)` imports it only for the default extractor.
+2026-10-16 The random delay (uniform in `YT_DELAY_SECONDS`, `a-b` or `a`) is applied before the metadata request and before each subtitle download; the fake extractor never waits.
+2026-10-16 yt-dlp errors are mapped by message: "not a bot" gives `blocked`; "private video", "your age", "age-restricted", "removed", "unavailable", "terminated" give `unavailable`; any other error propagates as `RuntimeError`.
+2026-10-16 The fake extractor requires `meta.json` when the directory exists, and ignores files that are not `<lang>.<manual|auto>.vtt`.
+2026-10-16 yt-dlp ships no type stubs, so `make_extractor` loads it with `importlib.import_module` instead of adding a stubs package.
