@@ -49,8 +49,6 @@
 2026-10-16 `stack.sh` starts each process under `setsid` so that `down` can signal its whole process group (TERM, then KILL after 5 seconds), and detects a taken port by trying to connect to it.
 2026-10-16 `stack.sh` passes every setting of section 5.2 to the Worker as a `--var`, even those the Worker does not read yet.
 2026-10-16 `.wrangler/` (wrangler's build output) is git-ignored and ESLint ignores it in `worker/`.
-2026-10-16 The expiry sweep of 8.6 is not run yet: expiry belongs to the next ticket, so `/node/*` and `GET /ops/jobs/<video_id>` read the jobs as stored.
-2026-10-16 `/node/result` and `/node/release` answer 404 `not_found` (after authentication) until the next ticket adds them.
 2026-10-16 A claim is one D1 batch of an `UPDATE jobs … WHERE video_id IN (SELECT … ORDER BY … LIMIT) RETURNING` (lease id from SQLite `randomblob(16)`, 32 hex characters) and an `INSERT INTO leases … SELECT` for the jobs just leased; the claimed jobs are sorted in the Worker as in 8.3 because `RETURNING` has no order.
 2026-10-16 `job.enqueued` is logged once per `POST /ops/jobs` that enqueues at least one new job, with `count` of new jobs and the request `priority`, and no `video_id`.
 2026-10-16 `auth.bearer.rejected` is also logged for a missing or wrong operator token (`surface` `ops`, `reason` `missing` or `unknown`), at level `warn`, as it is for node tokens.
@@ -58,3 +56,11 @@
 2026-10-16 The `/node/*` request body is validated with Ajv against the contract schemas inside the Worker; an empty body is invalid JSON (400), so a node sends `{}` to claim.
 2026-10-16 "video_id ascending" (8.3) is code-unit (SQLite BINARY) order, so `-` < digits < `A-Z` < `_` < `a-z`; the Worker sorts the claimed rows the same way (not `localeCompare`) so the answer keeps the order the jobs were chosen in.
 2026-10-16 A video id repeated in one `POST /ops/jobs` is deduplicated (first occurrence kept), so it is reported once.
+2026-10-16 The expiry sweep (8.6) runs in one D1 batch (node events, lease states, then the jobs through 8.7), also at the start of heartbeat and claim; the holder for the log comes from a SELECT made just before the batch.
+2026-10-16 A job that becomes `done` gets `leased_by`, `lease_id` and `lease_expires_at` null like a failed one (the holder stays in `tried_nodes`, the leases row and the R2 metadata).
+2026-10-16 The `[…]` marker is dropped from the word count of 8.4 as a whitespace-separated token equal to `[…]`; the `reason` of `job.validation_failed` is one of `transcript_missing`, `transcript_not_null`, `status_mismatch`, `video_id_mismatch`, `no_pages`, `word_count_mismatch`.
+2026-10-16 `job.stale_result` is logged for a stale `/node/result` only (not for `/node/release`), with the job's `video_id` when the lease exists.
+2026-10-16 The R2 write uses `onlyIf: {etagDoesNotMatch: "*"}` so an existing object is kept; any R2 exception is a 503 `storage_error`.
+2026-10-16 A request that loses a race on its lease (the conditional job UPDATE changes no row) answers the winner's stored `response_json` when its lease is `completed`/`released`, else 409 `stale_lease`.
+2026-10-16 `DELETE /ops/nodes/<id>` logs `node.revoked` only the first time (the repeat answers 200 silently), does not run the expiry sweep first, and records no node event.
+2026-10-16 Playwright runs with one worker because every test starts from `POST /ops/reset` on the one shared stack, which parallel files would wipe under each other.

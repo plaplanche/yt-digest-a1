@@ -22,7 +22,8 @@ test("2 nodes claim 6 jobs concurrently: each job is handed out once", async ({ 
     [...tokens, ...tokens].map(async (token) => {
       const res = await request.post("/node/claim", { headers: { Authorization: `Bearer ${token}` }, data: { max_jobs: 3 } });
       expect(res.status()).toBe(200);
-      return ((await res.json()) as { jobs: { video_id: string; lease_id: string }[] }).jobs;
+      const jobs = ((await res.json()) as { jobs: { video_id: string; lease_id: string }[] }).jobs;
+      return jobs.map((j) => ({ ...j, token }));
     }),
   );
 
@@ -33,5 +34,19 @@ test("2 nodes claim 6 jobs concurrently: each job is handed out once", async ({ 
     const job = (await (await request.get(`/ops/jobs/${id}`, { headers: OPS })).json()) as { status: string; attempts: number; tried_nodes: string[] };
     expect(job).toMatchObject({ status: "leased", attempts: 1 });
     expect(job.tried_nodes).toHaveLength(1);
+  }
+
+  // each node reports its jobs: all 6 end done
+  for (const job of claims.flat()) {
+    const res = await request.post("/node/result", {
+      headers: { Authorization: `Bearer ${job.token}` },
+      data: { lease_id: job.lease_id, outcome: "no_transcript", transcript: null },
+    });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ video_id: job.video_id, status: "done" });
+  }
+  for (const id of ids) {
+    const job = (await (await request.get(`/ops/jobs/${id}`, { headers: OPS })).json()) as { status: string };
+    expect(job.status).toBe("done");
   }
 });
