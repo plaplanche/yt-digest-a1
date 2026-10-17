@@ -64,3 +64,8 @@
 2026-10-16 A request that loses a race on its lease (the conditional job UPDATE changes no row) answers the winner's stored `response_json` when its lease is `completed`/`released`, else 409 `stale_lease`.
 2026-10-16 `DELETE /ops/nodes/<id>` logs `node.revoked` only the first time (the repeat answers 200 silently), does not run the expiry sweep first, and records no node event.
 2026-10-16 Playwright runs with one worker because every test starts from `POST /ops/reset` on the one shared stack, which parallel files would wipe under each other.
+2026-10-17 A missing `WORKER_URL` or `NODE_TOKEN` prints one plain line on standard output (standard error stays empty) and exits 2 before `service.started`.
+2026-10-17 A `CLAIM_BATCH`, `POLL_SECONDS` or `HEARTBEAT_SECONDS` that is not an integer in its range (1 to 10 for the batch, at least 1 for the others) falls back to its default.
+2026-10-17 `worker.call` is logged once per HTTP attempt (retries included), with the job's `video_id` for `result` and `release`; a request has a 30-second timeout.
+2026-10-17 In the loop, a failed heartbeat or claim (network error or non-2xx other than 401) is logged by `worker.call` only and retried at the next cycle; the daemon waits `POLL_SECONDS` after a claim that returned no job or failed. Heartbeats are also sent between jobs when due, and `jobs_in_progress` counts the claimed jobs not yet posted.
+2026-10-17 A result or release that still fails after its retries is dropped (the lease expires on the Worker side) and the daemon goes on with the next job; SIGTERM/SIGINT also stop a `--once` run the same way.

@@ -1,4 +1,4 @@
-"""The `yt-digest-node transcript` command."""
+"""The `yt-digest-node` commands: `transcript` and (in `daemon`) `work`."""
 
 import argparse
 import json
@@ -34,6 +34,8 @@ def _parser() -> argparse.ArgumentParser:
     transcript.add_argument("video_id", type=_video_id)
     transcript.add_argument("--langs")
     transcript.add_argument("--request-id")
+    work = commands.add_parser("work")
+    work.add_argument("--once", action="store_true")
     return parser
 
 
@@ -110,9 +112,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     env = dict(os.environ)
     langs = [
         lang.strip()
-        for lang in (args.langs or env.get("TRANSCRIPT_LANGS", "fr,en")).split(",")
+        for lang in (
+            getattr(args, "langs", None) or env.get("TRANSCRIPT_LANGS", "fr,en")
+        ).split(",")
         if lang.strip()
     ]
+    if args.command == "work":
+        from yt_digest_node.daemon import work
+
+        return work(env, langs, args.once)
     emit(
         LogEventName.service_started,
         attrs={"version": version("yt-digest-node")},
