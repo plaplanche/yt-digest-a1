@@ -1,6 +1,7 @@
 import { encryptSecret, randomToken, sha256Hex } from "./crypto.js";
 import { json } from "./http.js";
 import { log } from "./log.js";
+import { token } from "./token.js";
 
 const SCOPE = "digest";
 const GOOGLE_SCOPE = "openid email https://www.googleapis.com/auth/youtube.readonly";
@@ -338,7 +339,7 @@ async function callback(url: URL, env: Cloudflare.Env): Promise<Response> {
   return redirectToClient(pending.redirect_uri, { code }, pending.client_state);
 }
 
-/** Handles the OAuth routes of sections 10.1 to 10.4; null when the path is none of them. */
+/** Handles the OAuth routes of sections 10.1 to 10.5; null when the path is none of them. */
 export async function handleOAuth(request: Request, env: Cloudflare.Env, path: string): Promise<Response | null> {
   const url = new URL(request.url);
   if (request.method === "GET") {
@@ -347,6 +348,7 @@ export async function handleOAuth(request: Request, env: Cloudflare.Env, path: s
     if (path === "/authorize") return authorize(url, env);
     if (path === "/callback") return callback(url, env);
   }
+  if (request.method === "POST" && path === "/token") return token(request, env);
   if (request.method === "POST" && path === "/register") return register(request, env);
   if (request.method === "POST" && path === "/authorize/consent") return consent(request, env);
   return null;
