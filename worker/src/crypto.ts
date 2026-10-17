@@ -12,3 +12,13 @@ export function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
+
+const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
+
+/** Section 6.3: AES-GCM with a random 12-byte IV, stored as `v1:` and the base64 of IV and ciphertext. */
+export async function encryptSecret(plain: string, base64Key: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(base64Key), (c) => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plain)));
+  return `v1:${toBase64(new Uint8Array([...iv, ...cipher]))}`;
+}
