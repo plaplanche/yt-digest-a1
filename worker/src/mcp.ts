@@ -62,7 +62,7 @@ export async function handleMcp(request: Request, env: Cloudflare.Env): Promise<
   if (jsonrpc !== "2.0") return errorResponse(400, "invalid_request", "jsonrpc must be 2.0");
   if (typeof method !== "string") return errorResponse(400, "invalid_request", "A JSON-RPC request needs a method");
   if (id === undefined) return new Response(null, { status: 202 });
-  if (typeof id !== "number") return errorResponse(400, "invalid_request", "Invalid id");
+  if (typeof id !== "string" && typeof id !== "number") return errorResponse(400, "invalid_request", "Invalid id");
 
   switch (method) {
     case "initialize":

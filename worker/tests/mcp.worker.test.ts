@@ -129,10 +129,13 @@ describe("protocol", () => {
 });
 
 describe("validation", () => {
-  test("a missing jsonrpc and a null id are 400", async () => {
+  test("a missing jsonrpc and a null id are 400; a string id is echoed", async () => {
     const token = auth(await seedAccess());
     expect((await rpc({ id: 1, method: "ping" }, token)).status).toBe(400);
     expect((await rpc({ jsonrpc: "2.0", id: null, method: "ping" }, token)).status).toBe(400);
+    const res = await rpc({ jsonrpc: "2.0", id: "abc", method: "ping" }, token);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: "abc", result: {} });
   });
 });
 
@@ -172,7 +175,7 @@ describe("log events", () => {
     ]);
   });
 
-  test("mcp.tool.call with outcome ok and error; an unknown name is not logged", async () => {
+  test("mcp.tool.call with outcome ok and error; the raw name of an unknown tool is not logged", async () => {
     const token = auth(await seedAccess());
     const lines = await logged(async () => {
       await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_subscriptions" } }, token);
