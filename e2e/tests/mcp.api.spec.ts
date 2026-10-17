@@ -45,6 +45,8 @@ test("E2E-27: /mcp without a token is 401 with WWW-Authenticate; the discovery d
 
   const resource = (await (await request.get(metadataUrl)).json()) as { resource: string; authorization_servers: string[] };
   expect(resource.resource).toBe(`${workerUrl}/mcp`);
+  const sub = (await (await request.get("/.well-known/oauth-protected-resource/mcp")).json()) as unknown;
+  expect(sub).toEqual(resource);
   const server = (await (await request.get(`${resource.authorization_servers[0]}/.well-known/oauth-authorization-server`)).json()) as Record<string, string>;
   expect(server["issuer"]).toBe(resource.authorization_servers[0]);
   expect(server["token_endpoint"]).toBe(`${workerUrl}/token`);

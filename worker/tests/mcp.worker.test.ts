@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import worker from "../src/index.js";
 import { sha256Hex } from "../src/crypto.js";
 
@@ -125,5 +125,63 @@ describe("protocol", () => {
     expect((await call("/mcp", { method: "POST", headers: token, body: "{" })).status).toBe(400);
     expect((await rpc([PING], token)).status).toBe(400);
     expect((await call("/mcp", { method: "GET", headers: token })).status).toBe(404);
+  });
+});
+
+describe("validation", () => {
+  test("a missing jsonrpc and a null id are 400", async () => {
+    const token = auth(await seedAccess());
+    expect((await rpc({ id: 1, method: "ping" }, token)).status).toBe(400);
+    expect((await rpc({ jsonrpc: "2.0", id: null, method: "ping" }, token)).status).toBe(400);
+  });
+});
+
+describe("log events", () => {
+  type Line = { event: string; level: string; attrs: Record<string, unknown> };
+  async function logged(run: () => Promise<void>): Promise<Line[]> {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await run();
+    const lines = spy.mock.calls.map(([l]) => JSON.parse(String(l)) as Line);
+    spy.mockRestore();
+    return lines;
+  }
+
+  test("auth.origin.rejected", async () => {
+    const lines = await logged(async () => void (await rpc(PING, { Origin: "http://evil.test" })));
+    const line = lines.find((l) => l.event === "auth.origin.rejected");
+    expect(line).toMatchObject({ level: "warn", attrs: { origin: "http://evil.test" } });
+  });
+
+  test("auth.bearer.rejected with surface mcp and each reason", async () => {
+    const expired = await seedAccess({ expiresInMs: -1000 });
+    const revoked = await seedAccess();
+    await ops("/ops/invites/revoke", { email: "bob@test" });
+    const lines = await logged(async () => {
+      await rpc(PING);
+      await rpc(PING, auth("nope"));
+      await rpc(PING, auth(expired));
+      await rpc(PING, auth(revoked));
+    });
+    const rejected = lines.filter((l) => l.event === "auth.bearer.rejected");
+    expect(rejected.every((l) => l.level === "warn")).toBe(true);
+    expect(rejected.map((l) => l.attrs)).toEqual([
+      { surface: "mcp", reason: "missing" },
+      { surface: "mcp", reason: "unknown" },
+      { surface: "mcp", reason: "expired" },
+      { surface: "mcp", reason: "revoked" },
+    ]);
+  });
+
+  test("mcp.tool.call with outcome ok and error; an unknown name is not logged", async () => {
+    const token = auth(await seedAccess());
+    const lines = await logged(async () => {
+      await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_subscriptions" } }, token);
+      await rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "bob@test" } }, token);
+    });
+    const calls = lines.filter((l) => l.event === "mcp.tool.call");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.attrs).toMatchObject({ tool: "list_subscriptions", outcome: "ok" });
+    expect(typeof calls[0]!.attrs["duration_ms"]).toBe("number");
+    expect(calls[1]!.attrs).toMatchObject({ tool: "unknown", outcome: "error" });
   });
 });

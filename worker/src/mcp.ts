@@ -27,12 +27,14 @@ function originAllowed(request: Request, env: Cloudflare.Env): boolean {
 }
 
 function callTool(id: Id, params: unknown): Response {
-  const started = Date.now();
   const name = typeof params === "object" && params !== null ? (params as { name?: unknown }).name : undefined;
+  const started = Date.now();
   const ok = name === TOOL;
-  log("mcp.tool.call", { attrs: { tool: typeof name === "string" ? name : "", outcome: ok ? "ok" : "error", duration_ms: Date.now() - started } });
-  if (!ok) return rpcError(id, -32602, "Unknown tool");
-  return rpcResult(id, { content: [{ type: "text", text: JSON.stringify({ subscriptions: [] }) }], isError: false });
+  const response = ok
+    ? rpcResult(id, { content: [{ type: "text", text: JSON.stringify({ subscriptions: [] }) }], isError: false })
+    : rpcError(id, -32602, "Unknown tool");
+  log("mcp.tool.call", { attrs: { tool: ok ? TOOL : "unknown", outcome: ok ? "ok" : "error", duration_ms: Date.now() - started } });
+  return response;
 }
 
 /** `POST /mcp` (section 11). */
@@ -56,10 +58,11 @@ export async function handleMcp(request: Request, env: Cloudflare.Env): Promise<
     return errorResponse(400, "invalid_request", "The body must be JSON");
   }
   if (typeof message !== "object" || message === null || Array.isArray(message)) return errorResponse(400, "invalid_request", "The body must be a JSON-RPC message");
-  const { id, method, params } = message as { id?: unknown; method?: unknown; params?: unknown };
+  const { jsonrpc, id, method, params } = message as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
+  if (jsonrpc !== "2.0") return errorResponse(400, "invalid_request", "jsonrpc must be 2.0");
   if (typeof method !== "string") return errorResponse(400, "invalid_request", "A JSON-RPC request needs a method");
   if (id === undefined) return new Response(null, { status: 202 });
-  if (id !== null && typeof id !== "string" && typeof id !== "number") return errorResponse(400, "invalid_request", "Invalid id");
+  if (typeof id !== "number") return errorResponse(400, "invalid_request", "Invalid id");
 
   switch (method) {
     case "initialize":
