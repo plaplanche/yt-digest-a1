@@ -13,7 +13,18 @@ export default defineConfig({
         plugins: [
           cloudflareTest({
             wrangler: { configPath: "./wrangler.toml" },
-            miniflare: { bindings: { OPS_TOKEN: "ops-test", MIGRATIONS: migrations } },
+            miniflare: {
+              bindings: {
+                OPS_TOKEN: "ops-test",
+                MIGRATIONS: migrations,
+                PUBLIC_URL: "http://worker.test",
+                GOOGLE_ISSUER: "http://google.test",
+                GOOGLE_CLIENT_ID: "yt-digest-test",
+                GOOGLE_CLIENT_SECRET: "google-secret-test",
+                ADMIN_EMAIL: "alice@test",
+                TOKEN_ENC_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+              },
+            },
           }),
         ],
         test: { name: "worker", include: ["tests/**/*.worker.test.ts"], setupFiles: ["tests/setup.ts"] },
