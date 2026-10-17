@@ -126,7 +126,7 @@ async function refreshToken(env: Cloudflare.Env, form: FormData, clientId: strin
 /** `POST /token` (section 10.5). */
 export async function token(request: Request, env: Cloudflare.Env): Promise<Response> {
   let form: FormData;
-  if (!(request.headers.get("Content-Type") ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) {
+  if ((request.headers.get("Content-Type") ?? "").split(";")[0]!.trim().toLowerCase() !== "application/x-www-form-urlencoded") {
     return oauthError(400, "invalid_request", "The body must be form-encoded");
   }
   try {

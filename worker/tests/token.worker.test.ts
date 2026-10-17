@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import worker from "../src/index.js";
 import { sha256Hex } from "../src/crypto.js";
 import { checkAccessToken } from "../src/token.js";
@@ -139,6 +139,7 @@ describe("POST /token, authorization_code (10.5)", () => {
     ["JSON", "application/json", JSON.stringify({ grant_type: "authorization_code" })],
     ["text", "text/plain", "grant_type=refresh_token"],
     ["no content type", "", "grant_type=refresh_token"],
+    ["a longer media type", "application/x-www-form-urlencoded-foo", "grant_type=refresh_token"],
   ])("a body that is not form-encoded (%s): 400 invalid_request", async (_n, type, body) => {
     await expectError(await call("/token", { method: "POST", headers: type === "" ? {} : { "Content-Type": type }, body }), 400, "invalid_request");
   });
@@ -207,6 +208,59 @@ describe("POST /token, refresh_token (10.5)", () => {
     expect((await refresh(foreign.refresh_token)).status).toBe(200);
 
     await expectError(await refresh((await login()).access_token), 400, "invalid_grant");
+  });
+});
+
+describe("ACCESS_TOKEN_TTL_SECONDS", () => {
+  test("sets expires_in and the lifetime of the access token", async () => {
+    const res = await worker.fetch(
+      new Request(`${BASE}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: new URLSearchParams({ grant_type: "authorization_code", code: await seedCode(), redirect_uri: REDIRECT, client_id: clientId, code_verifier: VERIFIER, resource: RESOURCE }),
+      }),
+      { ...env, ACCESS_TOKEN_TTL_SECONDS: "120" },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Tokens;
+    expect(body.expires_in).toBe(120);
+    const row = await env.DB.prepare("SELECT expires_at FROM oauth_tokens WHERE token_hash = ?").bind(await sha256Hex(body.access_token)).first<{ expires_at: string }>();
+    const left = Date.parse(row!.expires_at) - Date.now();
+    expect(left).toBeGreaterThan(100000);
+    expect(left).toBeLessThanOrEqual(120000);
+  });
+});
+
+describe("logs", () => {
+  const events = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => String(c[0]));
+
+  test("auth.token.issued by each grant, without any token", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = await login();
+    const second = (await (await refresh(first.refresh_token)).json()) as Tokens;
+    const lines = events(spy);
+    const issued = lines.map((l) => JSON.parse(l) as { event: string; level: string; attrs: unknown }).filter((e) => e.event === "auth.token.issued");
+    expect(issued.map((e) => e.attrs)).toEqual([
+      { client_id: clientId, grant_type: "authorization_code" },
+      { client_id: clientId, grant_type: "refresh_token" },
+    ]);
+    for (const t of [first.access_token, first.refresh_token, second.access_token, second.refresh_token]) {
+      expect(lines.some((l) => l.includes(t))).toBe(false);
+    }
+  });
+
+  test("auth.refresh.reuse_detected at warn, with the number of tokens revoked", async () => {
+    const first = await login();
+    const second = (await (await refresh(first.refresh_token)).json()) as Tokens;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await refresh(first.refresh_token);
+    const lines = events(spy);
+    const found = lines.map((l) => JSON.parse(l) as { event: string; level: string; attrs: unknown }).filter((e) => e.event === "auth.refresh.reuse_detected");
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ level: "warn", attrs: { client_id: clientId, revoked: 4 } });
+    for (const t of [first.access_token, first.refresh_token, second.access_token, second.refresh_token]) {
+      expect(lines.some((l) => l.includes(t))).toBe(false);
+    }
   });
 });
 
