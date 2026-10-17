@@ -106,6 +106,30 @@ async function getTranscript(env: Cloudflare.Env, videoId: string): Promise<Resp
   return json({ video_id: videoId, transcript: await object.json(), node_id, lease_id, produced_at });
 }
 
+async function invite(env: Cloudflare.Env, body: Record<string, unknown>): Promise<Response> {
+  const { email } = body;
+  if (typeof email !== "string" || !email.includes("@")) return invalid("email must be a string containing @");
+  const lowered = email.toLowerCase();
+  await env.DB.prepare("INSERT INTO invites (email, invited_at) VALUES (?, ?) ON CONFLICT (email) DO UPDATE SET revoked = 0")
+    .bind(lowered, new Date().toISOString())
+    .run();
+  return json({ email: lowered, revoked: false });
+}
+
+async function revokeInvite(env: Cloudflare.Env, body: Record<string, unknown>): Promise<Response> {
+  const { email } = body;
+  if (typeof email !== "string") return invalid("email must be a string");
+  const lowered = email.toLowerCase();
+  const res = await env.DB.prepare("UPDATE invites SET revoked = 1 WHERE email = ?").bind(lowered).run();
+  if (res.meta.changes === 0) return errorResponse(404, "not_found", "Unknown invite");
+  return json({ email: lowered, revoked: true });
+}
+
+async function listUsers(env: Cloudflare.Env): Promise<Response> {
+  const { results } = await env.DB.prepare("SELECT user_sub, email, role FROM users ORDER BY email").all();
+  return json({ users: results });
+}
+
 /** Section 8.8: the node is disabled, each of its active leases is revoked and its job goes through 8.7. */
 async function revokeNode(env: Cloudflare.Env, nodeId: string): Promise<Response> {
   const now = new Date().toISOString();
@@ -136,6 +160,9 @@ export async function handleOps(request: Request, env: Cloudflare.Env, path: str
   if (request.method === "POST" && path === "/ops/reset") return reset(env);
   if (request.method === "POST" && path === "/ops/nodes") return withBody(request, (body) => enrollNode(env, body));
   if (request.method === "POST" && path === "/ops/jobs") return withBody(request, (body) => enqueueJobs(env, body));
+  if (request.method === "POST" && path === "/ops/invites") return withBody(request, (body) => invite(env, body));
+  if (request.method === "POST" && path === "/ops/invites/revoke") return withBody(request, (body) => revokeInvite(env, body));
+  if (request.method === "GET" && path === "/ops/users") return listUsers(env);
   const job = request.method === "GET" ? /^\/ops\/jobs\/([^/]+)$/.exec(path)?.[1] : undefined;
   if (job !== undefined) return getJob(env, job);
   const transcript = request.method === "GET" ? /^\/ops\/transcripts\/([^/]+)$/.exec(path)?.[1] : undefined;
