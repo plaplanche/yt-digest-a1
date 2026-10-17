@@ -5,6 +5,7 @@ declare namespace Cloudflare {
     OPS_TOKEN?: string;
     LEASE_SECONDS?: string;
     PUBLIC_URL: string;
+    ALLOWED_ORIGINS?: string;
     ACCESS_TOKEN_TTL_SECONDS?: string;
     REFRESH_TOKEN_TTL_SECONDS?: string;
     AUTH_CODE_TTL_SECONDS?: string;
