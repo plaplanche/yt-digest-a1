@@ -5,6 +5,7 @@ const mocksPort = process.env.MOCKS_PORT ?? "8789";
 
 export default defineConfig({
   testDir: "tests",
+  workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   use: { baseURL: `http://127.0.0.1:${workerPort}` },
   metadata: { mocksUrl: `http://127.0.0.1:${mocksPort}` },

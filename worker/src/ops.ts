@@ -1,5 +1,6 @@
 import { randomToken, sha256, sha256Hex } from "./crypto.js";
 import { errorResponse, json, notFound } from "./http.js";
+import { FAIL_SET, sweepExpiredLeases } from "./jobs.js";
 import { log } from "./log.js";
 
 /** Every table of section 6.3, children first is not needed: no foreign keys. */
@@ -88,6 +89,7 @@ async function enqueueJobs(env: Cloudflare.Env, body: Record<string, unknown>): 
 }
 
 async function getJob(env: Cloudflare.Env, videoId: string): Promise<Response> {
+  await sweepExpiredLeases(env);
   const row = await env.DB.prepare(
     "SELECT video_id, kind, priority, status, leased_by, lease_expires_at, attempts, tried_nodes, last_outcome, created_at, done_at FROM jobs WHERE video_id = ? AND kind = 'primary'",
   )
@@ -95,6 +97,32 @@ async function getJob(env: Cloudflare.Env, videoId: string): Promise<Response> {
     .first<{ tried_nodes: string }>();
   if (row === null) return errorResponse(404, "not_found", "Unknown job");
   return json({ ...row, tried_nodes: JSON.parse(row.tried_nodes) as string[] });
+}
+
+async function getTranscript(env: Cloudflare.Env, videoId: string): Promise<Response> {
+  const object = await env.TRANSCRIPTS.get(`transcripts/${videoId}.json`);
+  if (object === null) return errorResponse(404, "not_found", "No transcript");
+  const { node_id, lease_id, produced_at } = object.customMetadata ?? {};
+  return json({ video_id: videoId, transcript: await object.json(), node_id, lease_id, produced_at });
+}
+
+/** Section 8.8: the node is disabled, each of its active leases is revoked and its job goes through 8.7. */
+async function revokeNode(env: Cloudflare.Env, nodeId: string): Promise<Response> {
+  const now = new Date().toISOString();
+  const [disabled, failed] = await env.DB.batch<{ video_id: string }>([
+    env.DB.prepare("UPDATE nodes SET state = 'disabled', state_since = ?1, revoked_at = ?1 WHERE node_id = ?2 AND revoked_at IS NULL").bind(now, nodeId),
+    env.DB.prepare(
+      `UPDATE jobs SET ${FAIL_SET} WHERE kind = 'primary' AND status = 'leased'
+         AND lease_id IN (SELECT lease_id FROM leases WHERE node_id = ?3 AND state = 'active') RETURNING video_id`,
+    ).bind(now, "lease_revoked", nodeId),
+    env.DB.prepare("UPDATE leases SET state = 'revoked' WHERE node_id = ?1 AND state = 'active'").bind(nodeId),
+  ]);
+  if (disabled?.meta.changes === 1) {
+    log("node.revoked", { attrs: { node_id: nodeId, leases_revoked: failed?.results.length ?? 0 } });
+  } else if ((await env.DB.prepare("SELECT 1 FROM nodes WHERE node_id = ?").bind(nodeId).first()) === null) {
+    return errorResponse(404, "not_found", "Unknown node");
+  }
+  return json({ node_id: nodeId, state: "disabled" });
 }
 
 /** Handles `/ops/*`: 404 when disabled, 401 before anything else reads the request, then the route. */
@@ -110,5 +138,9 @@ export async function handleOps(request: Request, env: Cloudflare.Env, path: str
   if (request.method === "POST" && path === "/ops/jobs") return withBody(request, (body) => enqueueJobs(env, body));
   const job = request.method === "GET" ? /^\/ops\/jobs\/([^/]+)$/.exec(path)?.[1] : undefined;
   if (job !== undefined) return getJob(env, job);
+  const transcript = request.method === "GET" ? /^\/ops\/transcripts\/([^/]+)$/.exec(path)?.[1] : undefined;
+  if (transcript !== undefined) return getTranscript(env, transcript);
+  const revoked = request.method === "DELETE" ? /^\/ops\/nodes\/([^/]+)$/.exec(path)?.[1] : undefined;
+  if (revoked !== undefined) return revokeNode(env, revoked);
   return notFound();
 }

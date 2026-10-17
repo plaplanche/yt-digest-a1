@@ -3,7 +3,10 @@ import type { NodeHeartbeatResponse } from "./contracts/node-heartbeat-response.
 import { sha256Hex } from "./crypto.js";
 import { errorResponse, json, notFound } from "./http.js";
 import { log } from "./log.js";
-import { validateClaim, validateHeartbeat } from "./validate.js";
+import { FAIL_SET, sweepExpiredLeases } from "./jobs.js";
+import type { NodeJobAck } from "./contracts/node-job-ack.js";
+import type { NodeResultRequest } from "./contracts/node-result-request.js";
+import { validateClaim, validateHeartbeat, validateRelease, validateResult } from "./validate.js";
 
 const DEFAULT_LEASE_SECONDS = 600;
 const DEFAULT_MAX_JOBS = 3;
@@ -27,6 +30,7 @@ async function authenticate(request: Request, env: Cloudflare.Env): Promise<{ no
 
 async function heartbeat(env: Cloudflare.Env, nodeId: string, hourlyBudget: number, body: unknown): Promise<Response> {
   if (!validateHeartbeat(body)) return errorResponse(400, "invalid_request", "Body does not match node-heartbeat-request");
+  await sweepExpiredLeases(env);
   await env.DB.prepare("UPDATE nodes SET last_heartbeat_at = ?, version = ? WHERE node_id = ?")
     .bind(new Date().toISOString(), body.version, nodeId)
     .run();
@@ -58,6 +62,7 @@ interface ClaimedRow {
  */
 async function claim(env: Cloudflare.Env, nodeId: string, body: unknown): Promise<Response> {
   if (!validateClaim(body)) return errorResponse(400, "invalid_request", "Body does not match node-claim-request");
+  await sweepExpiredLeases(env);
   const maxJobs = body.max_jobs ?? DEFAULT_MAX_JOBS;
   const seconds = leaseSeconds(env);
   const now = new Date();
@@ -95,17 +100,140 @@ async function claim(env: Cloudflare.Env, nodeId: string, body: unknown): Promis
   return json(response);
 }
 
+interface LeaseRow {
+  video_id: string;
+  node_id: string;
+  state: string;
+  response_json: string | null;
+}
+
+const staleLease = (): Response => errorResponse(409, "stale_lease", "The lease is unknown, not yours or no longer current");
+
+const storedResponse = (lease: LeaseRow): Response =>
+  new Response(lease.response_json, { status: 200, headers: { "Content-Type": "application/json" } });
+
+const getLease = (env: Cloudflare.Env, leaseId: string): Promise<LeaseRow | null> =>
+  env.DB.prepare("SELECT video_id, node_id, state, response_json FROM leases WHERE lease_id = ?").bind(leaseId).first<LeaseRow>();
+
+/** The answer of a request that lost a race on its lease: what the winner stored, else a stale lease. */
+async function afterRace(env: Cloudflare.Env, leaseId: string, nodeId: string): Promise<Response> {
+  const lease = await getLease(env, leaseId);
+  return lease !== null && lease.node_id === nodeId && lease.state === "completed" ? storedResponse(lease) : staleLease();
+}
+
+/** Section 8.4 step 3: the reason the result is inconsistent, or null. */
+function validationFailure(body: NodeResultRequest, videoId: string): string | null {
+  const t = body.transcript;
+  if (body.outcome !== "ok") return t === null ? null : "transcript_not_null";
+  if (t === null) return "transcript_missing";
+  if (t.status !== "ok") return "status_mismatch";
+  if (t.video_id !== videoId) return "video_id_mismatch";
+  if (t.pages.length === 0) return "no_pages";
+  const words = t.pages.join(" ").split(/\s+/).filter((w) => w !== "" && w !== "[…]").length;
+  return words === t.word_count ? null : "word_count_mismatch";
+}
+
+/** Section 8.4. */
+async function result(env: Cloudflare.Env, nodeId: string, body: unknown): Promise<Response> {
+  if (!validateResult(body)) return errorResponse(400, "invalid_request", "Body does not match node-result-request");
+  await sweepExpiredLeases(env);
+  const lease = await getLease(env, body.lease_id);
+  if (lease === null || lease.node_id !== nodeId || lease.state !== "active") {
+    if (lease !== null && lease.node_id === nodeId && lease.state === "completed") return storedResponse(lease);
+    log("job.stale_result", { video_id: lease?.video_id, attrs: { node_id: nodeId } });
+    return staleLease();
+  }
+  const videoId = lease.video_id;
+  const now = new Date().toISOString();
+  const guard = "kind = 'primary' AND status = 'leased' AND lease_id = ?3";
+
+  const reason = validationFailure(body, videoId);
+  if (reason !== null) {
+    const [, failed] = await env.DB.batch<{ status: string }>([
+      env.DB.prepare(
+        "INSERT INTO node_events (node_id, ts, kind, video_id) SELECT ?1, ?2, 'validation_failed', ?4 WHERE EXISTS (SELECT 1 FROM leases WHERE lease_id = ?3 AND state = 'active')",
+      ).bind(nodeId, now, body.lease_id, videoId),
+      env.DB.prepare(`UPDATE jobs SET ${FAIL_SET} WHERE video_id = ?4 AND ${guard} RETURNING status`).bind(now, "validation_failed", body.lease_id, videoId),
+      env.DB.prepare("UPDATE leases SET state = 'rejected' WHERE lease_id = ?1 AND state = 'active'").bind(body.lease_id),
+    ]);
+    if (failed?.results[0] === undefined) return afterRace(env, body.lease_id, nodeId);
+    log("job.validation_failed", { video_id: videoId, attrs: { node_id: nodeId, reason } });
+    return errorResponse(422, "validation_failed", `Result rejected: ${reason}`);
+  }
+
+  if (body.outcome === "ok") {
+    try {
+      await env.TRANSCRIPTS.put(`transcripts/${videoId}.json`, JSON.stringify(body.transcript), {
+        httpMetadata: { contentType: "application/json" },
+        customMetadata: { node_id: nodeId, lease_id: body.lease_id, produced_at: now },
+        onlyIf: { etagDoesNotMatch: "*" },
+      });
+    } catch {
+      return errorResponse(503, "storage_error", "The transcript could not be stored");
+    }
+  }
+
+  const terminal = body.outcome === "ok" || body.outcome === "no_transcript";
+  const set = terminal ? "status = 'done', done_at = ?1, leased_by = NULL, lease_id = NULL, lease_expires_at = NULL, last_outcome = ?2" : FAIL_SET;
+  const [, updated] = await env.DB.batch<{ status: string }>([
+    env.DB.prepare(
+      "INSERT INTO node_events (node_id, ts, kind, video_id) SELECT ?1, ?2, ?5, ?4 WHERE EXISTS (SELECT 1 FROM leases WHERE lease_id = ?3 AND state = 'active')",
+    ).bind(nodeId, now, body.lease_id, videoId, `job_${body.outcome}`),
+    env.DB.prepare(`UPDATE jobs SET ${set} WHERE video_id = ?4 AND ${guard} RETURNING status`).bind(now, body.outcome, body.lease_id, videoId),
+    env.DB.prepare(
+      `UPDATE leases SET state = 'completed',
+         response_json = json_object('video_id', video_id, 'status', (SELECT status FROM jobs WHERE jobs.video_id = leases.video_id AND kind = 'primary'))
+       WHERE lease_id = ?1 AND state = 'active'`,
+    ).bind(body.lease_id),
+  ]);
+  const status = updated?.results[0]?.status;
+  if (status === undefined) return afterRace(env, body.lease_id, nodeId);
+  log("job.completed", { video_id: videoId, attrs: { node_id: nodeId, outcome: body.outcome, status } });
+  const ack: NodeJobAck = { video_id: videoId, status: status as NodeJobAck["status"] };
+  return json(ack);
+}
+
+/** Section 8.5. */
+async function release(env: Cloudflare.Env, nodeId: string, body: unknown): Promise<Response> {
+  if (!validateRelease(body)) return errorResponse(400, "invalid_request", "Body does not match node-release-request");
+  await sweepExpiredLeases(env);
+  const lease = await getLease(env, body.lease_id);
+  if (lease !== null && lease.node_id === nodeId && lease.state === "released") return storedResponse(lease);
+  if (lease === null || lease.node_id !== nodeId || lease.state !== "active") return staleLease();
+  const [updated] = await env.DB.batch<{ status: string }>([
+    env.DB.prepare(
+      `UPDATE jobs SET status = 'queued', leased_by = NULL, lease_id = NULL, lease_expires_at = NULL, attempts = attempts - 1,
+         tried_nodes = (SELECT json_group_array(value) FROM json_each(jobs.tried_nodes) WHERE value != ?1), last_outcome = 'released'
+       WHERE kind = 'primary' AND status = 'leased' AND lease_id = ?2 RETURNING status`,
+    ).bind(nodeId, body.lease_id),
+    env.DB.prepare(
+      `UPDATE leases SET state = 'released', response_json = json_object('video_id', video_id, 'status', 'queued')
+       WHERE lease_id = ?1 AND state = 'active'`,
+    ).bind(body.lease_id),
+  ]);
+  if (updated?.results[0] === undefined) {
+    const again = await getLease(env, body.lease_id);
+    return again !== null && again.node_id === nodeId && again.state === "released" ? storedResponse(again) : staleLease();
+  }
+  log("job.released", { video_id: lease.video_id, attrs: { node_id: nodeId } });
+  const ack: NodeJobAck = { video_id: lease.video_id, status: "queued" };
+  return json(ack);
+}
+
 /** Handles `/node/*`: authentication first (section 8.1), then the body, then the endpoint. */
 export async function handleNode(request: Request, env: Cloudflare.Env, path: string): Promise<Response> {
   const auth = await authenticate(request, env);
   if (auth instanceof Response) return auth;
   const endpoint = request.method === "POST" ? path : "";
-  if (endpoint !== "/node/heartbeat" && endpoint !== "/node/claim") return notFound();
+  if (!["/node/heartbeat", "/node/claim", "/node/result", "/node/release"].includes(endpoint)) return notFound();
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return errorResponse(400, "invalid_request", "Body is not JSON");
   }
-  return endpoint === "/node/heartbeat" ? heartbeat(env, auth.nodeId, auth.hourlyBudget, body) : claim(env, auth.nodeId, body);
+  if (endpoint === "/node/heartbeat") return heartbeat(env, auth.nodeId, auth.hourlyBudget, body);
+  if (endpoint === "/node/result") return result(env, auth.nodeId, body);
+  if (endpoint === "/node/release") return release(env, auth.nodeId, body);
+  return claim(env, auth.nodeId, body);
 }
